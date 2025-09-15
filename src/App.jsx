@@ -161,6 +161,20 @@ function tzBucket(tz) {
   return "Other";
 }
 
+// Pretty phone formatter: (xxx) xxx - xxxx [ext. n]
+function formatDisplayPhone(raw = "") {
+  if (!raw) return "";
+  const extMatch = raw.match(/(?:ext\.?|x|xt|extension)\s*\.?:?\s*(\d{1,6})/i);
+  const ext = extMatch ? extMatch[1] : "";
+  let digits = (raw.match(/\d+/g) || []).join("");
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  if (digits.length < 10) return raw.trim();
+  const area = digits.slice(0, 3);
+  const pre  = digits.slice(3, 6);
+  const line = digits.slice(6, 10);
+  return `(${area}) ${pre} - ${line}${ext ? ` ext. ${ext}` : ""}`;
+}
+
 /** -----------------------------
  *  TOAST (lightweight)
  *  ----------------------------- */
@@ -575,7 +589,8 @@ export default function App() {
 
   // ACTIONS
   const callLead = (lead) => {
-    window.location.href = `tel:${lead.phone}`;
+    // always dial normalized E.164 (extensions typically not supported by tel:)
+    window.location.href = `tel:${normalizePhone(lead.phone)}`;
     toast(`Calling ${lead.name}…`, "info");
   };
   const startBlock = () => {
@@ -785,7 +800,7 @@ export default function App() {
                 Object.entries(groupedLeads).map(([group, items]) => (
                   <div key={group} style={{ marginBottom: 18 }}>
                     {(groupByCollege || groupByTz) && (
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--label-secondary)", margin: "6px 0" }}>
+                      <div className="ellipsis" style={{ fontSize: 13, fontWeight: 700, color: "var(--label-secondary)", margin: "6px 0" }}>
                         {group}
                       </div>
                     )}
@@ -810,8 +825,8 @@ export default function App() {
                               onClick={() => setSelectedLead(lead)}
                             >
                               <div className="lead-info">
-                                <div className="lead-name">{lead.name}</div>
-                                <div className="lead-meta">
+                                <div className="lead-name ellipsis">{lead.name}</div>
+                                <div className="lead-meta ellipsis">
                                   {(lead.title || "—") + " • " + (lead.college || "—")}
                                 </div>
                               </div>
@@ -820,7 +835,7 @@ export default function App() {
                                   {getLocalTime(lead.timezone)}
                                 </div>
                               </div>
-                              <div>{lead.phone}</div>
+                              <div className="mono">{formatDisplayPhone(lead.phone)}</div>
                               <div className="action-buttons" onClick={(e) => e.stopPropagation()}>
                                 {idx === 0 ? (
                                   <button className="action-btn primary" onClick={() => callLead(lead)}>
@@ -867,9 +882,9 @@ export default function App() {
                 </div>
                 {leads.map((lead) => (
                   <div key={lead.id} className="ios-table-row" onClick={() => setSelectedLead(lead)}>
-                    <div>{lead.name}</div>
-                    <div>{lead.phone}</div>
-                    <div>{lead.college}</div>
+                    <div className="ellipsis">{lead.name}</div>
+                    <div className="mono">{formatDisplayPhone(lead.phone)}</div>
+                    <div className="ellipsis">{lead.college}</div>
                     <div className="action-buttons" onClick={(e) => e.stopPropagation()}>
                       <div
                         className={`pill ${lead.dnc ? "" : "active"}`}
@@ -982,7 +997,7 @@ export default function App() {
               </div>
               <div style={{ marginBottom: 10 }}>
                 <span className="form-label">Phone</span>
-                <div>{selectedLead.phone || "—"}</div>
+                <div className="mono">{formatDisplayPhone(selectedLead.phone) || "—"}</div>
               </div>
               <div style={{ marginBottom: 10 }}>
                 <span className="form-label">Local Time</span>
