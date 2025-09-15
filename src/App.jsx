@@ -1,73 +1,143 @@
 // src/App.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signOut,
+} from "firebase/auth";
+import { auth } from "./firebase";
+import {
+  subscribeLeads,
+  createLead,
+  updateLead,
+  deleteLead,
+  STATE_TO_TZ,
+} from "./services/leads";
 
-/* ========= Icons (inline SVG) ========= */
-const PhoneIcon = (props) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-  </svg>
-);
-const SearchIcon = (props) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-  </svg>
-);
-const PlusIcon = (props) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-  </svg>
-);
-const XIcon = (props) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-  </svg>
-);
-const ClockIcon = (props) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
-    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-  </svg>
+/* ---------------- UI Helpers (light iOS/Mac look) ---------------- */
+
+const Pill = ({ active = false, onClick, children, style }) => (
+  <button
+    onClick={onClick}
+    style={{
+      padding: "8px 14px",
+      borderRadius: 20,
+      fontWeight: 600,
+      border: `1px solid ${active ? "var(--system-blue)" : "var(--separator)"}`,
+      background: active ? "var(--system-blue)" : "var(--material-thin)",
+      color: active ? "#fff" : "var(--label)",
+      cursor: "pointer",
+      transition: "all .2s",
+      ...style,
+    }}
+  >
+    {children}
+  </button>
 );
 
-/* ========= Utils ========= */
-const STATE_TO_TZ = {
-  AL: "America/Chicago", AK: "America/Anchorage", AZ: "America/Phoenix", AR: "America/Chicago",
-  CA: "America/Los_Angeles", CO: "America/Denver", CT: "America/New_York", DE: "America/New_York",
-  FL: "America/New_York", GA: "America/New_York", HI: "Pacific/Honolulu", ID: "America/Denver",
-  IL: "America/Chicago", IN: "America/New_York", IA: "America/Chicago", KS: "America/Chicago",
-  KY: "America/New_York", LA: "America/Chicago", ME: "America/New_York", MD: "America/New_York",
-  MA: "America/New_York", MI: "America/New_York", MN: "America/Chicago", MS: "America/Chicago",
-  MO: "America/Chicago", MT: "America/Denver", NE: "America/Chicago", NV: "America/Los_Angeles",
-  NH: "America/New_York", NJ: "America/New_York", NM: "America/Denver", NY: "America/New_York",
-  NC: "America/New_York", ND: "America/Chicago", OH: "America/New_York", OK: "America/Chicago",
-  OR: "America/Los_Angeles", PA: "America/New_York", RI: "America/New_York", SC: "America/New_York",
-  SD: "America/Chicago", TN: "America/Chicago", TX: "America/Chicago", UT: "America/Denver",
-  VT: "America/New_York", VA: "America/New_York", WA: "America/Los_Angeles", WV: "America/New_York",
-  WI: "America/Chicago", WY: "America/Denver"
+const SectionCard = ({ title, right, children, style }) => (
+  <div
+    className="card"
+    style={{
+      background: "var(--system-grouped-background-secondary)",
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 16,
+      boxShadow: "var(--shadow-md)",
+      ...style,
+    }}
+  >
+    {(title || right) && (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        {title ? (
+          <h2 style={{ fontSize: 18, margin: 0, color: "var(--label)" }}>
+            {title}
+          </h2>
+        ) : (
+          <div />
+        )}
+        {right}
+      </div>
+    )}
+    {children}
+  </div>
+);
+
+const TimeBadge = ({ inWindow, text }) => (
+  <span
+    className={`time-badge ${inWindow ? "in-window" : "outside"}`}
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "6px 12px",
+      borderRadius: 20,
+      fontSize: 14,
+      fontWeight: 600,
+      background: inWindow ? "rgba(52,199,89,.15)" : "rgba(255,59,48,.15)",
+      color: inWindow ? "var(--system-green)" : "var(--system-red)",
+    }}
+  >
+    {text}
+  </span>
+);
+
+/* ---------------- Domain helpers (queue logic & tz) ---------------- */
+
+const TZ_BUCKETS = {
+  "Pacific/Honolulu": "HST",
+  "America/Anchorage": "AKT",
+  "America/Los_Angeles": "PST",
+  "America/Phoenix": "MT",
+  "America/Denver": "MT",
+  "America/Chicago": "CT",
+  "America/New_York": "ET",
+  "America/Halifax": "AT",
 };
 
-const normalizePhone = (phone) => {
-  const cleaned = (phone || "").replace(/\D/g, "");
-  if (cleaned.length === 10) return "+1" + cleaned;
-  if (cleaned.length === 11 && cleaned[0] === "1") return "+" + cleaned;
-  return cleaned ? "+" + cleaned : "";
-};
+function tzBucket(tz) {
+  return TZ_BUCKETS[tz] || "Other";
+}
 
-const getLocalTime = (timezone) => {
+function getLocalHour(timezone) {
   try {
-    return new Date().toLocaleTimeString("en-US", { timeZone: timezone, hour12: true, hour: "numeric", minute: "2-digit" });
-  } catch {
-    return new Date().toLocaleTimeString("en-US", { hour12: true, hour: "numeric", minute: "2-digit" });
-  }
-};
-const getLocalHour = (timezone) => {
-  try {
-    const hh = new Date().toLocaleTimeString("en-US", { timeZone: timezone, hour12: false, hour: "2-digit" });
+    const hh = new Date().toLocaleTimeString("en-US", {
+      timeZone: timezone,
+      hour12: false,
+      hour: "2-digit",
+    });
     return parseInt(hh, 10);
   } catch {
     return new Date().getHours();
   }
-};
-const callWindowForTitle = (title) => {
+}
+
+function getLocalTime(timezone) {
+  try {
+    return new Date().toLocaleTimeString("en-US", {
+      timeZone: timezone,
+      hour12: true,
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return new Date().toLocaleTimeString("en-US", {
+      hour12: true,
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+}
+
+function callWindowForTitle(title) {
   const t = (title || "").toLowerCase();
   const windows = {
     "distance ed": { start: 10, end: 16 },
@@ -75,91 +145,166 @@ const callWindowForTitle = (title) => {
     ada: { start: 11, end: 15 },
     accessibility: { start: 11, end: 15 },
     testing: { start: 9, end: 15 },
-    instructional: { start: 10, end: 16 }
+    instructional: { start: 10, end: 16 },
   };
-  for (const [key, window] of Object.entries(windows)) if (t.includes(key)) return window;
+  for (const [k, w] of Object.entries(windows)) {
+    if (t.includes(k)) return w;
+  }
   return { start: 9, end: 16 };
-};
-const tzBucket = (iana) => {
-  if (!iana) return "Other";
-  if (iana.includes("Los_Angeles") || iana.includes("Anchorage") || iana.includes("Honolulu")) return "PT";
-  if (iana.includes("Denver") || iana.includes("Phoenix")) return "MT";
-  if (iana.includes("Chicago")) return "CT";
-  if (iana.includes("New_York")) return "ET";
-  // Include Atlantic (e.g., Puerto Rico) if you ever store it
-  if (iana.includes("Puerto_Rico") || iana.includes("Halifax")) return "AT";
-  return "Other";
-};
+}
 
-/* ========= Toast (simple) ========= */
-const toast = (msg, type = "info") => {
-  const old = document.querySelector(".toast");
-  if (old) old.remove();
-  const el = document.createElement("div");
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2500);
-};
+/* ---------------- Add Lead Modal ---------------- */
 
-/* ========= Add Lead Modal ========= */
-function AddLeadModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ name: "", phone: "", college: "", title: "", state: "", email: "", notes: "" });
-  const submit = (e) => {
+function AddLeadModal({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    college: "",
+    title: "",
+    state: "",
+    email: "",
+    notes: "",
+  });
+
+  const onSubmit = (e) => {
     e.preventDefault();
     if (!form.name || !form.phone || !form.college || !form.title) return;
-    onAdd({
-      id: Date.now().toString(),
-      ...form,
-      phone: normalizePhone(form.phone),
-      timezone: STATE_TO_TZ[form.state] || "America/New_York",
-      dnc: false
-    });
-    onClose();
-    toast("Lead added", "success");
+    onSave(form);
   };
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">Add New Lead</h2>
-          <button className="btn-icon btn-ghost" onClick={onClose} title="Close"><XIcon/></button>
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,.5)",
+        backdropFilter: "blur(10px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 200,
+      }}
+    >
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--system-grouped-background-secondary)",
+          borderRadius: 20,
+          padding: 24,
+          width: "min(520px,92vw)",
+          boxShadow: "var(--shadow-xl)",
+        }}
+      >
+        <div
+          className="modal-header"
+          style={{ display: "flex", justifyContent: "space-between" }}
+        >
+          <h3 style={{ margin: 0 }}>Add New Lead</h3>
+          <button
+            className="btn-ghost"
+            onClick={onClose}
+            aria-label="Close add lead modal"
+            style={{
+              background: "transparent",
+              border: "none",
+              fontSize: 18,
+              cursor: "pointer",
+              color: "var(--label-tertiary)",
+            }}
+          >
+            ✕
+          </button>
         </div>
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label className="form-label">Name *</label>
-            <input className="form-input" value={form.name} onChange={(e)=>setForm({...form, name:e.target.value})} required autoFocus/>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Phone *</label>
-            <input className="form-input" value={form.phone} onChange={(e)=>setForm({...form, phone:e.target.value})} required placeholder="(555) 123-4567"/>
-          </div>
-          <div className="form-group">
-            <label className="form-label">College/University *</label>
-            <input className="form-input" value={form.college} onChange={(e)=>setForm({...form, college:e.target.value})} required/>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Title *</label>
-            <input className="form-input" value={form.title} onChange={(e)=>setForm({...form, title:e.target.value})} required placeholder="e.g., Distance Ed Director"/>
-          </div>
-          <div className="form-group">
-            <label className="form-label">State</label>
-            <select className="form-select" value={form.state} onChange={(e)=>setForm({...form, state:e.target.value})}>
+
+        <form onSubmit={onSubmit}>
+          {[
+            ["Name *", "name", "text", true],
+            ["Phone *", "phone", "tel", true],
+            ["College/University *", "college", "text", true],
+            ["Title *", "title", "text", true],
+          ].map(([label, key, type]) => (
+            <div className="form-group" key={key} style={{ marginBottom: 14 }}>
+              <label className="form-label" style={{ fontWeight: 600 }}>
+                {label}
+              </label>
+              <input
+                className="form-input"
+                type={type}
+                required
+                value={form[key]}
+                onChange={(e) => setForm((s) => ({ ...s, [key]: e.target.value }))}
+                style={inputStyle}
+              />
+            </div>
+          ))}
+
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label className="form-label" style={{ fontWeight: 600 }}>
+              State
+            </label>
+            <select
+              className="form-select"
+              value={form.state}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, state: e.target.value }))
+              }
+              style={inputStyle}
+            >
               <option value="">Select State</option>
-              {Object.keys(STATE_TO_TZ).map((s)=>(<option key={s} value={s}>{s}</option>))}
+              {Object.keys(STATE_TO_TZ).map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
             </select>
           </div>
-          <div className="form-group">
-            <label className="form-label">Email</label>
-            <input className="form-input" type="email" value={form.email} onChange={(e)=>setForm({...form, email:e.target.value})} placeholder="email@university.edu"/>
+
+          <div className="form-group" style={{ marginBottom: 14 }}>
+            <label className="form-label" style={{ fontWeight: 600 }}>
+              Email
+            </label>
+            <input
+              className="form-input"
+              type="email"
+              value={form.email}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, email: e.target.value }))
+              }
+              style={inputStyle}
+              placeholder="name@university.edu"
+            />
           </div>
-          <div className="form-group">
-            <label className="form-label">Notes</label>
-            <textarea className="form-textarea" value={form.notes} onChange={(e)=>setForm({...form, notes:e.target.value})} placeholder="Any additional information..."/>
+
+          <div className="form-group" style={{ marginBottom: 18 }}>
+            <label className="form-label" style={{ fontWeight: 600 }}>
+              Notes
+            </label>
+            <textarea
+              className="form-textarea"
+              value={form.notes}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, notes: e.target.value }))
+              }
+              style={{ ...inputStyle, minHeight: 100, resize: "vertical" }}
+              placeholder="Anything useful for your next call…"
+            />
           </div>
-          <div style={{ display:"flex", gap:12, justifyContent:"flex-end" }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn">Add Lead</button>
+
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary"
+              style={btnSecondary}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn" style={btnPrimary}>
+              Add Lead
+            </button>
           </div>
         </form>
       </div>
@@ -167,507 +312,697 @@ function AddLeadModal({ onClose, onAdd }) {
   );
 }
 
-/* ========= App ========= */
+/* ---------------- Main App ---------------- */
+
 export default function App() {
-  // Views
-  const [view, setView] = useState("queue");
+  const [user, setUser] = useState(null);
 
-  // Data
+  const [view, setView] = useState("queue"); // queue | leads | stats
   const [leads, setLeads] = useState([]);
-  const [logs, setLogs] = useState([]);
-
-  // Filters/controls
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("");
-  const [onlyInWindow, setOnlyInWindow] = useState(false);
   const [hideDNC, setHideDNC] = useState(true);
-  const [sortBy, setSortBy] = useState("score");
-  const [groupBy, setGroupBy] = useState("none"); // none | college | timezone
-
-  // Modals/selection
+  const [onlyInWindow, setOnlyInWindow] = useState(false);
+  const [groupBy, setGroupBy] = useState("none"); // none | college | tz
   const [showAdd, setShowAdd] = useState(false);
-  const [selected, setSelected] = useState(null);
 
-  // Call block
-  const [blockStart, setBlockStart] = useState(null);
-  const [blockCalls, setBlockCalls] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
-
-  // Theme
-  const [theme, setTheme] = useState(localStorage.getItem("ui_theme") || "system");
+  // Auth listener
   useEffect(() => {
-    if (theme === "system") {
-      document.documentElement.removeAttribute("data-theme");
-    } else {
-      document.documentElement.setAttribute("data-theme", theme);
-    }
-    localStorage.setItem("ui_theme", theme);
-  }, [theme]);
-
-  // Load & persist
-  useEffect(() => {
-    const L = localStorage.getItem("sdr_leads");
-    const G = localStorage.getItem("sdr_logs");
-    if (L) setLeads(JSON.parse(L));
-    if (G) setLogs(JSON.parse(G));
-    if (!L) {
-      const samples = [
-        { id: "1", name: "John Smith", phone: "+14155550101", college: "UC Berkeley", title: "Distance Ed Director", state: "CA", timezone: "America/Los_Angeles", dnc: false },
-        { id: "2", name: "Sarah Johnson", phone: "+12125550102", college: "NYU", title: "LMS Administrator", state: "NY", timezone: "America/New_York", dnc: false },
-        { id: "3", name: "Mike Chen", phone: "+13125550103", college: "Northwestern", title: "ADA Coordinator", state: "IL", timezone: "America/Chicago", dnc: false },
-        { id: "4", name: "Emily Davis", phone: "+17135550104", college: "Rice University", title: "Testing Manager", state: "TX", timezone: "America/Chicago", dnc: false },
-        { id: "5", name: "Robert Wilson", phone: "+13035550105", college: "CU Boulder", title: "Instructional Designer", state: "CO", timezone: "America/Denver", dnc: false }
-      ];
-      setLeads(samples);
-      localStorage.setItem("sdr_leads", JSON.stringify(samples));
-    }
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    return unsub;
   }, []);
-  useEffect(() => { localStorage.setItem("sdr_leads", JSON.stringify(leads)); }, [leads]);
-  useEffect(() => { localStorage.setItem("sdr_logs", JSON.stringify(logs)); }, [logs]);
 
-  // Timer
+  // Subscribe to leads
   useEffect(() => {
-    if (!blockStart) return;
-    const id = setInterval(()=> setElapsed(Date.now() - blockStart), 1000);
-    return () => clearInterval(id);
-  }, [blockStart]);
+    if (!user) return;
+    return subscribeLeads(user.uid, setLeads, {
+      hideDNC,
+      state: stateFilter || undefined,
+    });
+  }, [user, hideDNC, stateFilter]);
 
-  // Derived queue
-  const queue = useMemo(() => {
-    let arr = leads.filter(l => !l.dnc || !hideDNC);
-    if (search) {
-      const q = search.toLowerCase();
-      arr = arr.filter(l =>
-        l.name.toLowerCase().includes(q) ||
-        l.college.toLowerCase().includes(q) ||
-        l.title.toLowerCase().includes(q) ||
-        (l.phone || "").includes(q)
+  // Filters & queue sorting
+  const filteredLeads = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let arr = leads;
+
+    if (q) {
+      arr = arr.filter(
+        (l) =>
+          l.name?.toLowerCase().includes(q) ||
+          l.college?.toLowerCase().includes(q) ||
+          l.title?.toLowerCase().includes(q) ||
+          l.phone?.includes(q) ||
+          l.email?.toLowerCase().includes(q)
       );
     }
-    if (stateFilter) arr = arr.filter(l => l.state === stateFilter);
+
     if (onlyInWindow) {
-      arr = arr.filter(l => {
-        const hour = getLocalHour(l.timezone);
+      arr = arr.filter((l) => {
+        const h = getLocalHour(l.timezone || "America/New_York");
         const win = callWindowForTitle(l.title);
-        return hour >= win.start && hour <= win.end;
+        return h >= win.start && h <= win.end;
       });
     }
-    arr.sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      if (sortBy === "lastCall") {
-        const aLast = logs.filter(x=>x.leadId===a.id).sort((x,y)=> new Date(y.at)-new Date(x.at))[0];
-        const bLast = logs.filter(x=>x.leadId===b.id).sort((x,y)=> new Date(y.at)-new Date(x.at))[0];
-        return (aLast?.at ? new Date(aLast.at).getTime():0) - (bLast?.at ? new Date(bLast.at).getTime():0);
-      }
-      // score
-      const ah = getLocalHour(a.timezone), bh = getLocalHour(b.timezone);
-      const aw = callWindowForTitle(a.title), bw = callWindowForTitle(b.title);
-      const as = Math.abs(ah - (aw.start + aw.end)/2);
-      const bs = Math.abs(bh - (bw.start + bw.end)/2);
-      return as - bs;
-    });
-    return arr;
-  }, [leads, logs, search, stateFilter, onlyInWindow, hideDNC, sortBy]);
 
-  // Stats
-  const stats = useMemo(() => {
-    const total = logs.length;
-    const count = (k) => logs.filter(l => l.outcome === k).length;
-    return {
-      total,
-      conversations: count("Conversation"),
-      voicemails: count("Left VM"),
-      noAnswers: count("No answer"),
-      dnc: count("DNC"),
-      convRate: total ? Math.round((count("Conversation")/total)*100) : 0
-    };
-  }, [logs]);
+    // queue order by midpoint closeness
+    if (view === "queue") {
+      arr = [...arr].sort((a, b) => {
+        const ha = getLocalHour(a.timezone || "America/New_York");
+        const hb = getLocalHour(b.timezone || "America/New_York");
+        const wa = callWindowForTitle(a.title);
+        const wb = callWindowForTitle(b.title);
+        const sa = Math.abs(ha - (wa.start + wa.end) / 2);
+        const sb = Math.abs(hb - (wb.start + wb.end) / 2);
+        return sa - sb;
+      });
+    } else if (view === "leads") {
+      arr = [...arr].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+
+    return arr;
+  }, [leads, search, onlyInWindow, view]);
+
+  // Groups
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return { All: filteredLeads };
+    const map = {};
+    for (const l of filteredLeads) {
+      const key =
+        groupBy === "college"
+          ? l.college || "Unknown"
+          : tzBucket(l.timezone || "");
+      if (!map[key]) map[key] = [];
+      map[key].push(l);
+    }
+    return map;
+  }, [filteredLeads, groupBy]);
 
   // Actions
-  const startBlock = () => { setBlockStart(Date.now()); setBlockCalls(0); toast("Call block started","success"); };
-  const endBlock = () => {
-    const ms = Date.now() - blockStart;
-    const hours = ms/3600000;
-    const cph = hours ? Math.round(blockCalls/hours) : 0;
-    toast(`Block ended: ${blockCalls} calls, ${cph} calls/hour`);
-    setBlockStart(null); setBlockCalls(0); setElapsed(0);
+  const signInGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
   };
-  const callLead = (lead) => {
+
+  const signOutUser = async () => {
+    await signOut(auth);
+  };
+
+  const handleAddLead = async (payload) => {
+    if (!user) return;
+    await createLead(user.uid, payload);
+    setShowAdd(false);
+  };
+
+  const toggleDNC = async (lead) => {
+    if (!user) return;
+    await updateLead(user.uid, lead.id, { dnc: !lead.dnc });
+  };
+
+  const handleDelete = async (lead) => {
+    if (!user) return;
+    if (!confirm(`Delete ${lead.name}? This cannot be undone.`)) return;
+    await deleteLead(user.uid, lead.id);
+  };
+
+  const handleCall = (lead) => {
     window.location.href = `tel:${lead.phone}`;
-    toast(`Calling ${lead.name}…`);
-  };
-  const logCall = (leadId, outcome) => {
-    setLogs(prev => [...prev, { id: Date.now().toString(), leadId, at: new Date().toISOString(), outcome }]);
-    if (blockStart) setBlockCalls(c => c+1);
-    if (outcome === "DNC") setLeads(prev => prev.map(l => l.id === leadId ? { ...l, dnc:true } : l));
-  };
-  const addLead = (lead) => setLeads(prev => [...prev, lead]);
-  const toggleDNC = (leadId) => setLeads(prev => prev.map(l => l.id===leadId ? ({...l, dnc:!l.dnc}) : l));
-  const deleteLead = (leadId) => {
-    if (!confirm("Delete this contact? This also keeps historical logs (for stats).")) return;
-    setLeads(prev => prev.filter(l => l.id !== leadId));
-    toast("Contact deleted","success");
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const onKey = (e) => {
-      const typing = ["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName);
-      if (typing) return;
-      if (e.key === "c" && queue.length) callLead(queue[0]);
-      if (e.key === "1" && queue.length) logCall(queue[0].id, "No answer");
-      if (e.key === "2" && queue.length) logCall(queue[0].id, "Left VM");
-      if (e.key === "3" && queue.length) logCall(queue[0].id, "Conversation");
-      if (e.key === "4" && queue.length) logCall(queue[0].id, "DNC");
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setShowAdd(true); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [queue]);
+  /* ---------------- RENDER ---------------- */
 
-  const formatElapsed = (ms) => {
-    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
-    return `${String(h).padStart(2,"0")}:${String(m%60).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
-  };
+  if (!user) {
+    return (
+      <div style={{ padding: 24 }}>
+        <header
+          className="nav-bar"
+          style={navBarStyle}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1 style={brandStyle}>SDR Power Queue</h1>
+            <span style={proBadgeStyle}>Pro</span>
+          </div>
+          <div>
+            <button onClick={signInGoogle} style={btnPrimary}>
+              Sign in with Google
+            </button>
+          </div>
+        </header>
 
-  // Grouping (Leads view)
-  const groupedLeads = useMemo(() => {
-    if (groupBy === "none") return { All: leads };
-    const groups = {};
-    if (groupBy === "college") {
-      for (const l of leads) {
-        const key = l.college || "—";
-        (groups[key] ||= []).push(l);
-      }
-    } else if (groupBy === "timezone") {
-      for (const l of leads) {
-        const key = tzBucket(l.timezone);
-        (groups[key] ||= []).push(l);
-      }
-    }
-    return groups;
-  }, [leads, groupBy]);
+        <SectionCard title="Welcome">
+          <p style={{ marginBottom: 8 }}>
+            Sign in to start adding leads, calling from your prioritized queue,
+            and syncing your work securely to Firestore.
+          </p>
+          <ul style={{ margin: "8px 0 0 18px" }}>
+            <li>Each user sees only their own leads (per-user security rules)</li>
+            <li>Works offline; syncs when back online</li>
+            <li>Fast queue and iOS/Mac-style UI</li>
+          </ul>
+        </SectionCard>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
+      {/* Top bar */}
+      <header className="nav-bar" style={navBarStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h1 style={brandStyle}>SDR Power Queue</h1>
+          <span style={proBadgeStyle}>Pro</span>
+        </div>
+
+        <div className="segmented-control" style={segmentedStyle}>
+          {["queue", "leads", "stats"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setView(tab)}
+              className={view === tab ? "active" : ""}
+              style={{
+                ...segBtnStyle,
+                ...(view === tab ? segBtnActive : {}),
+              }}
+            >
+              {tab[0].toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ color: "var(--label-tertiary)", fontSize: 14 }}>
+            {user.email}
+          </span>
+          <button onClick={() => setShowAdd(true)} style={btnSecondary}>
+            + Add Lead
+          </button>
+          <button onClick={signOutUser} style={btnGhost}>
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      {/* Filters */}
+      <SectionCard
+        title="Filters"
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <Pill
+              active={onlyInWindow}
+              onClick={() => setOnlyInWindow((s) => !s)}
+            >
+              In Window
+            </Pill>
+            <Pill active={hideDNC} onClick={() => setHideDNC((s) => !s)}>
+              Hide DNC
+            </Pill>
+          </div>
+        }
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto auto auto",
+            gap: 12,
+          }}
+        >
+          <input
+            placeholder="Search name, college, title, phone, email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={inputStyle}
+          />
+          <select
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">All States</option>
+            {Object.keys(STATE_TO_TZ).map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+          <select
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="none">No Group</option>
+            <option value="college">Group by College</option>
+            <option value="tz">Group by Timezone</option>
+          </select>
+          <button onClick={() => setShowAdd(true)} style={btnPrimary}>
+            + New Lead
+          </button>
+        </div>
+      </SectionCard>
+
+      {/* Content */}
+      {view === "queue" && (
+        <QueueView
+          groups={grouped}
+          onCall={handleCall}
+          onToggleDNC={toggleDNC}
+          onDelete={handleDelete}
+        />
+      )}
+
+      {view === "leads" && (
+        <LeadsView
+          groups={grouped}
+          onCall={handleCall}
+          onToggleDNC={toggleDNC}
+          onDelete={handleDelete}
+        />
+      )}
+
+      {view === "stats" && <StatsView leads={leads} />}
+
+      {showAdd && (
+        <AddLeadModal onClose={() => setShowAdd(false)} onSave={handleAddLead} />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Views ---------------- */
+
+function QueueView({ groups, onCall, onToggleDNC, onDelete }) {
+  const groupKeys = Object.keys(groups);
 
   return (
     <>
-      {/* Nav Bar */}
-      <div className="nav-bar">
-        <div className="nav-brand">
-          <h1>SDR Power Queue</h1>
-          <span className="pill" style={{ background: "linear-gradient(135deg, var(--blue), var(--indigo))", color:"#fff" }}>Pro</span>
-        </div>
-
-        <div className="segmented-control">
-          <div
-            className="indicator"
-            style={{
-              width: "33.33%",
-              left: view === "queue" ? "0%" : view === "leads" ? "33.33%" : "66.66%"
-            }}
-          />
-          <button className={view==="queue" ? "active":""} onClick={()=>setView("queue")}>Queue</button>
-          <button className={view==="leads" ? "active":""} onClick={()=>setView("leads")}>Leads</button>
-          <button className={view==="stats" ? "active":""} onClick={()=>setView("stats")}>Stats</button>
-        </div>
-
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <button className="btn-icon btn-secondary" onClick={()=>setShowAdd(true)} title="Add lead"><PlusIcon/></button>
-          <select className="form-select" style={{ height:40, padding:"8px 10px" }} value={theme} onChange={(e)=>setTheme(e.target.value)} title="Theme">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="app-container">
-        {/* ===== Queue View ===== */}
-        {view === "queue" && (
-          <>
-            {/* Timer Card */}
-            <div className="card timer-card">
-              <div className="timer-display">{formatElapsed(elapsed)}</div>
-              <div className="timer-metrics">
-                <div className="metric">
-                  <div className="metric-value">{blockCalls}</div>
-                  <div className="metric-label">Calls This Block</div>
-                </div>
-                <div className="metric">
-                  <div className="metric-value">{blockStart ? Math.round(blockCalls / ((Date.now() - blockStart)/3600000)) : 0}</div>
-                  <div className="metric-label">Calls/Hour</div>
-                </div>
-              </div>
-              <div style={{ display:"flex", gap:12, marginTop:20 }}>
-                {!blockStart ? (
-                  <button className="btn" onClick={startBlock}>Start Call Block</button>
-                ) : (
-                  <button className="btn btn-danger" onClick={endBlock}>End Block</button>
-                )}
-              </div>
-            </div>
-
-            {/* Search / filters */}
-            <div className="search-bar">
-              <span className="search-icon"><SearchIcon/></span>
-              <input className="search-input" placeholder="Search leads..." value={search} onChange={(e)=>setSearch(e.target.value)} />
-            </div>
-            <div className="filter-pills">
-              <div className={`pill ${onlyInWindow ? "active":""}`} onClick={()=>setOnlyInWindow(v=>!v)}><ClockIcon/> In Window</div>
-              <div className={`pill ${hideDNC ? "active":""}`} onClick={()=>setHideDNC(v=>!v)}>Hide DNC</div>
-              <select className="form-select" style={{ width:"auto" }} value={stateFilter} onChange={(e)=>setStateFilter(e.target.value)}>
-                <option value="">All States</option>
-                {Object.keys(STATE_TO_TZ).map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select className="form-select" style={{ width:"auto" }} value={sortBy} onChange={(e)=>setSortBy(e.target.value)}>
-                <option value="score">Best Time</option>
-                <option value="name">Name</option>
-                <option value="lastCall">Oldest Last Call</option>
-              </select>
-            </div>
-
-            {/* Queue table */}
-            <div className="card">
-              <h2 style={{ marginBottom: 20 }}>Call Queue ({queue.length} leads)</h2>
-              {queue.length ? (
-                <div className="ios-table">
-                  <div className="ios-table-header">
-                    <div>Lead</div><div>Local Time</div><div>Phone</div><div>Actions</div>
-                  </div>
-                  {queue.slice(0, 30).map((lead, idx) => {
-                    const hour = getLocalHour(lead.timezone);
-                    const win = callWindowForTitle(lead.title);
-                    const inWindow = hour >= win.start && hour <= win.end;
-                    return (
-                      <div key={lead.id} className={`ios-table-row ${idx===0 ? "priority":""}`} onClick={()=>setSelected(lead)}>
-                        <div className="lead-info">
-                          <div className="lead-name">{lead.name}</div>
-                          <div className="lead-meta">{lead.title} • {lead.college}</div>
-                        </div>
-                        <div>
-                          <div className={`time-badge ${inWindow ? "in-window":"outside"}`}>{getLocalTime(lead.timezone)}</div>
-                        </div>
-                        <div>{lead.phone}</div>
-                        <div className="action-buttons" onClick={(e)=>e.stopPropagation()}>
-                          {idx===0 ? (
-                            <button className="action-btn primary" onClick={()=>callLead(lead)}><PhoneIcon/> Call</button>
-                          ) : (
-                            <>
-                              <button className="action-btn" onClick={()=>logCall(lead.id,"No answer")}>NA</button>
-                              <button className="action-btn" onClick={()=>logCall(lead.id,"Left VM")}>VM</button>
-                              <button className="action-btn" onClick={()=>logCall(lead.id,"Conversation")}>Conv</button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-icon">📞</div>
-                  <div className="empty-title">No leads in queue</div>
-                  <div className="empty-message">Adjust your filters or add new leads</div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ===== Leads View ===== */}
-        {view === "leads" && (
-          <div className="card">
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-              <h2>All Leads ({leads.length})</h2>
-              <div style={{ display:"flex", gap:8 }}>
-                <select className="form-select" value={groupBy} onChange={(e)=>setGroupBy(e.target.value)}>
-                  <option value="none">No Grouping</option>
-                  <option value="college">Group by College</option>
-                  <option value="timezone">Group by Timezone (PT/MT/CT/ET/AT)</option>
-                </select>
-                <button className="btn" onClick={()=>setShowAdd(true)}><PlusIcon/> Add</button>
-              </div>
-            </div>
-
-            {/* Render groups */}
-            {Object.entries(groupedLeads).map(([header, items]) => (
-              <div key={header} style={{ marginBottom: 20 }}>
-                {groupBy !== "none" && <div style={{ fontWeight:700, margin:"6px 0 10px" }}>{header} · {items.length}</div>}
-                <div className="ios-table">
-                  <div className="ios-table-header">
-                    <div>Name</div><div>Contact</div><div>Organization</div><div>Status</div>
-                  </div>
-                  {items.map((lead) => (
-                    <div key={lead.id} className="ios-table-row" onClick={()=>setSelected(lead)}>
-                      <div>{lead.name}</div>
-                      <div>{lead.phone}</div>
-                      <div>{lead.college}</div>
-                      <div style={{ display:"flex", gap:8 }}>
-                        <div
-                          className={`pill ${lead.dnc ? "" : "active"}`}
-                          onClick={(e)=>{ e.stopPropagation(); toggleDNC(lead.id); }}
-                        >{lead.dnc ? "DNC" : "Active"}</div>
-                        <button className="action-btn" onClick={(e)=>{ e.stopPropagation(); deleteLead(lead.id); }}>Delete</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ===== Stats View ===== */}
-        {view === "stats" && (
-          <>
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-value">{stats.total}</div>
-                <div className="stat-label">Total Calls</div>
-                <div className="stat-change positive">↑ trending</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{stats.convRate}%</div>
-                <div className="stat-label">Conversation Rate</div>
-                <div className="stat-change positive">↑ week over week</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{stats.conversations}</div>
-                <div className="stat-label">Conversations</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value">{stats.voicemails}</div>
-                <div className="stat-label">Voicemails</div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h2 style={{ marginBottom: 20 }}>Call Outcomes</h2>
-              <div style={{ display:"grid", gap:12 }}>
-                {["No answer","Left VM","Conversation","DNC"].map((outcome) => {
-                  const count = logs.filter(l => l.outcome === outcome).length;
-                  const percent = stats.total ? Math.round((count / stats.total) * 100) : 0;
-                  return (
-                    <div key={outcome}
-                         style={{ display:"flex", justifyContent:"space-between", padding:12, background:"var(--material-thin)", borderRadius:12 }}>
-                      <span>{outcome}</span>
-                      <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-                        <span style={{ fontWeight:600 }}>{count}</span>
-                        <span style={{ color:"var(--label-tertiary)" }}>{percent}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* FAB */}
-      <div className="fab" onClick={()=>setShowAdd(true)} title="Add lead"><PlusIcon/></div>
-
-      {/* Quick actions (backup/export) */}
-      <div className="quick-actions">
-        <div className="quick-action" title="Download backup" onClick={()=>{
-          const data = { leads, logs };
-          const blob = new Blob([JSON.stringify(data,null,2)], { type:"application/json" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = `sdr-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
-          URL.revokeObjectURL(url); toast("Backup downloaded","success");
-        }}>💾</div>
-        <div className="quick-action" title="Export CSV" onClick={()=>{
-          const csv = [
-            ["Name","Phone","College","Title","State","Timezone","DNC"],
-            ...leads.map(l => [l.name,l.phone,l.college,l.title,l.state,l.timezone,l.dnc])
-          ].map(r => r.map(v => `"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
-          const blob = new Blob([csv], { type:"text/csv" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = `leads-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-          URL.revokeObjectURL(url); toast("CSV exported","success");
-        }}>📊</div>
-      </div>
-
-      {/* Add Lead Modal */}
-      {showAdd && <AddLeadModal onClose={()=>setShowAdd(false)} onAdd={addLead} />}
-
-      {/* Lead Details Modal */}
-      {selected && (
-        <div className="modal-backdrop" onClick={()=>setSelected(null)}>
-          <div className="modal" onClick={(e)=>e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{selected.name}</h2>
-              <button className="btn-icon btn-ghost" onClick={()=>setSelected(null)} title="Close"><XIcon/></button>
-            </div>
-
-            <div style={{ marginBottom:20 }}>
-              <div style={{ marginBottom:12 }}>
-                <span className="form-label">Title</span>
-                <div>{selected.title}</div>
-              </div>
-              <div style={{ marginBottom:12 }}>
-                <span className="form-label">Organization</span>
-                <div>{selected.college}</div>
-              </div>
-              <div style={{ marginBottom:12 }}>
-                <span className="form-label">Phone</span>
-                <div>{selected.phone}</div>
-              </div>
-              <div style={{ marginBottom:12 }}>
-                <span className="form-label">Local Time</span>
-                <div>
-                  <span className={`time-badge ${
-                      (()=>{
-                        const h = getLocalHour(selected.timezone);
-                        const w = callWindowForTitle(selected.title);
-                        return h>=w.start && h<=w.end;
-                      })() ? "in-window" : "outside"
-                    }`}>
-                    {getLocalTime(selected.timezone)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-              <button className="btn" onClick={()=>{ callLead(selected); setSelected(null); }}><PhoneIcon/> Call</button>
-              <button className="btn btn-secondary" onClick={()=>{ logCall(selected.id,"No answer"); setSelected(null); }}>No Answer</button>
-              <button className="btn btn-secondary" onClick={()=>{ logCall(selected.id,"Left VM"); setSelected(null); }}>VM</button>
-              <button className="btn btn-success" onClick={()=>{ logCall(selected.id,"Conversation"); setSelected(null); }}>Conv</button>
-              <button className="btn btn-danger" onClick={()=>{ deleteLead(selected.id); setSelected(null); }}>Delete</button>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Notes</label>
-              <textarea
-                className="form-textarea"
-                value={selected.notes || ""}
-                onChange={(e)=>{
-                  const notes = e.target.value;
-                  setLeads(prev => prev.map(l => l.id===selected.id ? {...l, notes} : l));
-                  setSelected(s => s ? {...s, notes} : s);
-                }}
-                placeholder="Add notes about this lead..."
-              />
-            </div>
-
+      {groupKeys.map((group) => (
+        <SectionCard
+          key={group}
+          title={`${group} (${groups[group].length})`}
+        >
+          <div className="ios-table">
+            <HeaderRow columns={["Lead", "Local Time", "Phone", "Actions"]} />
             <div>
-              <h3 style={{ marginBottom:12 }}>Call History</h3>
-              <div style={{ maxHeight:200, overflowY:"auto" }}>
-                {logs.filter(l => l.leadId === selected.id)
-                     .sort((a,b)=> new Date(b.at)-new Date(a.at))
-                     .map(log => (
-                  <div key={log.id} style={{ padding:8, borderBottom:"1px solid var(--separator)", display:"flex", justifyContent:"space-between" }}>
-                    <span>{new Date(log.at).toLocaleString()}</span>
-                    <span style={{ fontWeight:600 }}>{log.outcome}</span>
+              {groups[group].map((l, idx) => {
+                const hour = getLocalHour(l.timezone || "America/New_York");
+                const win = callWindowForTitle(l.title);
+                const inWindow = hour >= win.start && hour <= win.end;
+
+                return (
+                  <div
+                    key={l.id}
+                    className={`ios-table-row ${idx === 0 ? "priority" : ""}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "2fr 1fr 1fr 1.5fr",
+                      gap: 12,
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      borderBottom: "1px solid var(--separator)",
+                      position: "relative",
+                      background:
+                        idx === 0
+                          ? "linear-gradient(90deg, rgba(0,122,255,0.08), transparent)"
+                          : "transparent",
+                    }}
+                  >
+                    <div className="lead-info">
+                      <div className="lead-name" style={{ fontWeight: 600 }}>
+                        {l.name} {l.dnc && <small>(DNC)</small>}
+                      </div>
+                      <div
+                        className="lead-meta"
+                        style={{ color: "var(--label-tertiary)", fontSize: 13 }}
+                      >
+                        {l.title} • {l.college}
+                      </div>
+                    </div>
+                    <div>
+                      <TimeBadge
+                        inWindow={inWindow}
+                        text={getLocalTime(l.timezone || "America/New_York")}
+                      />
+                    </div>
+                    <div style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {l.phone}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button style={btnPrimarySm} onClick={() => onCall(l)}>
+                        Call
+                      </button>
+                      <button style={btnSecondarySm} onClick={() => onToggleDNC(l)}>
+                        {l.dnc ? "Undnc" : "DNC"}
+                      </button>
+                      <button style={btnDangerSm} onClick={() => onDelete(l)}>
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
-        </div>
-      )}
+        </SectionCard>
+      ))}
     </>
   );
 }
+
+function LeadsView({ groups, onCall, onToggleDNC, onDelete }) {
+  const groupKeys = Object.keys(groups);
+
+  return (
+    <>
+      {groupKeys.map((group) => (
+        <SectionCard key={group} title={`${group} (${groups[group].length})`}>
+          <div className="ios-table">
+            <HeaderRow columns={["Name", "Contact", "Organization", "Status"]} />
+            <div>
+              {groups[group].map((l) => (
+                <div
+                  key={l.id}
+                  className="ios-table-row"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "2fr 1.5fr 1.5fr 1.5fr",
+                    gap: 12,
+                    alignItems: "center",
+                    padding: "12px 16px",
+                    borderBottom: "1px solid var(--separator)",
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>{l.name}</div>
+                  <div>
+                    <div style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {l.phone}
+                    </div>
+                    <div style={{ color: "var(--label-tertiary)", fontSize: 13 }}>
+                      {l.email}
+                    </div>
+                  </div>
+                  <div>{l.college}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button style={btnPrimarySm} onClick={() => onCall(l)}>
+                      Call
+                    </button>
+                    <button style={btnSecondarySm} onClick={() => onToggleDNC(l)}>
+                      {l.dnc ? "Undnc" : "DNC"}
+                    </button>
+                    <button style={btnDangerSm} onClick={() => onDelete(l)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </SectionCard>
+      ))}
+    </>
+  );
+}
+
+function StatsView({ leads }) {
+  const counts = useMemo(() => {
+    const total = leads.length;
+    const dnc = leads.filter((l) => l.dnc).length;
+    const byTZ = leads.reduce((acc, l) => {
+      const k = tzBucket(l.timezone || "");
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {});
+    const byCollege = leads.reduce((acc, l) => {
+      const k = l.college || "Unknown";
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {});
+    return { total, dnc, byTZ, byCollege };
+  }, [leads]);
+
+  return (
+    <>
+      <SectionCard title="Summary">
+        <div
+          className="stats-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))",
+            gap: 16,
+          }}
+        >
+          <StatTile label="Total Leads" value={counts.total} />
+          <StatTile label="DNC" value={counts.dnc} />
+          <StatTile
+            label="Active"
+            value={counts.total - counts.dnc}
+            accent="green"
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard title="By Timezone">
+        <SimpleTable rows={Object.entries(counts.byTZ)} />
+      </SectionCard>
+
+      <SectionCard title="Top Colleges">
+        <SimpleTable
+          rows={Object.entries(counts.byCollege)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 20)}
+        />
+      </SectionCard>
+    </>
+  );
+}
+
+/* ---------------- Small UI bits ---------------- */
+
+function HeaderRow({ columns }) {
+  return (
+    <div
+      className="ios-table-header"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
+        gap: 12,
+        padding: "12px 16px",
+        borderBottom: "1px solid var(--separator)",
+        background: "var(--material-thin)",
+        fontSize: 12,
+        color: "var(--label-secondary)",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        fontWeight: 700,
+      }}
+    >
+      {columns.map((c) => (
+        <div key={c}>{c}</div>
+      ))}
+    </div>
+  );
+}
+
+function StatTile({ label, value, accent }) {
+  const gradient =
+    accent === "green"
+      ? "linear-gradient(135deg, var(--system-green), #5ee390)"
+      : "linear-gradient(135deg, var(--system-blue), var(--system-indigo))";
+  return (
+    <div
+      className="stat-card"
+      style={{
+        background: "var(--system-grouped-background-secondary)",
+        borderRadius: 16,
+        padding: 20,
+        boxShadow: "var(--shadow-md)",
+      }}
+    >
+      <div
+        className="stat-value"
+        style={{
+          fontSize: 32,
+          fontWeight: 800,
+          marginBottom: 6,
+          background: gradient,
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        className="stat-label"
+        style={{ color: "var(--label-tertiary)", textTransform: "uppercase" }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function SimpleTable({ rows }) {
+  return (
+    <div className="ios-table">
+      <div
+        className="ios-table-header"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr auto",
+          gap: 12,
+          padding: "12px 16px",
+          borderBottom: "1px solid var(--separator)",
+          background: "var(--material-thin)",
+          fontSize: 12,
+          color: "var(--label-secondary)",
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          fontWeight: 700,
+        }}
+      >
+        <div>Key</div>
+        <div>Count</div>
+      </div>
+      <div>
+        {rows.map(([k, v]) => (
+          <div
+            key={k}
+            className="ios-table-row"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: 12,
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--separator)",
+            }}
+          >
+            <div>{k}</div>
+            <div style={{ fontWeight: 600 }}>{v}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Inline styles (light iOS / macOS) ---------------- */
+
+const navBarStyle = {
+  position: "sticky",
+  top: 0,
+  zIndex: 10,
+  background: "var(--material-thick)",
+  backdropFilter: "saturate(180%) blur(20px)",
+  borderRadius: 20,
+  padding: 12,
+  marginBottom: 20,
+  boxShadow: "var(--shadow-lg)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+};
+
+const brandStyle = {
+  margin: 0,
+  fontSize: 20,
+  fontWeight: 800,
+  background: "linear-gradient(135deg, var(--system-blue), var(--system-indigo))",
+  WebkitBackgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+};
+
+const proBadgeStyle = {
+  padding: "4px 8px",
+  borderRadius: 12,
+  background: "linear-gradient(135deg, var(--system-blue), var(--system-indigo))",
+  color: "#fff",
+  fontSize: 12,
+  fontWeight: 700,
+};
+
+const segmentedStyle = {
+  display: "inline-flex",
+  padding: 2,
+  background: "var(--vibrancy-dark)",
+  borderRadius: 14,
+};
+
+const segBtnStyle = {
+  appearance: "none",
+  border: "none",
+  background: "transparent",
+  color: "var(--label)",
+  padding: "8px 16px",
+  borderRadius: 12,
+  fontWeight: 700,
+  fontSize: 14,
+  cursor: "pointer",
+};
+const segBtnActive = {
+  background: "var(--system-background-secondary)",
+  boxShadow: "var(--shadow-sm)",
+};
+
+const inputStyle = {
+  padding: "12px 14px",
+  borderRadius: 12,
+  border: "1px solid var(--separator)",
+  background: "var(--material-thin)",
+  color: "var(--label)",
+  fontSize: 15,
+  outline: "none",
+};
+
+const btnPrimary = {
+  background: "var(--system-blue)",
+  color: "#fff",
+  border: "none",
+  padding: "10px 16px",
+  borderRadius: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const btnSecondary = {
+  background: "var(--vibrancy-dark)",
+  color: "var(--label)",
+  border: "1px solid var(--separator)",
+  padding: "10px 16px",
+  borderRadius: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const btnGhost = {
+  background: "transparent",
+  color: "var(--system-blue)",
+  border: "none",
+  padding: "8px 12px",
+  borderRadius: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const btnPrimarySm = {
+  ...btnPrimary,
+  padding: "8px 12px",
+  borderRadius: 10,
+  fontSize: 13,
+};
+
+const btnSecondarySm = {
+  ...btnSecondary,
+  padding: "8px 12px",
+  borderRadius: 10,
+  fontSize: 13,
+};
+
+const btnDangerSm = {
+  background: "var(--system-red)",
+  color: "#fff",
+  border: "none",
+  padding: "8px 12px",
+  borderRadius: 10,
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+};
