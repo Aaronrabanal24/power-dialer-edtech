@@ -409,3 +409,23 @@ h3 { font-size: 1.5rem; }
 /* Animations */
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .shimmer { background: linear-gradient(90deg, var(--bg-surface) 0%, var(--bg-scrim) 50%, var(--bg-surface) 100%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+
+/* Ensure the modal fully covers the header */
+.modal-backdrop {
+  z-index: 3000; /* higher than header */
+  background: rgba(0,0,0,0.55); /* slightly stronger scrim for focus */
+}
+
+/* While a modal is open, freeze scroll */
+body.modal-open {
+  overflow: hidden;
+}
+
+/* Dim + blur everything behind the modal (header + app) */
+body.modal-open .header-container,
+body.modal-open .app-container {
+  filter: blur(6px) saturate(75%);
+  transform: scale(0.995);
+  transition: filter 180ms ease, transform 180ms ease;
+  pointer-events: none; /* prevent clicks on background */
+}
