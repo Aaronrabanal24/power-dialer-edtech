@@ -43,12 +43,12 @@ import {
 } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  apiKey: AIzaSyC7j8NDqql1k88x3YSIm4X-L74CsNAU16c,
+  authDomain: power-dialer-ece33.firebaseapp.com,
+  projectId: power-dialer-ece33,
+  appId: 1:328642191235:web:d6b558e16630b5924060b6,
+  storageBucket: power-dialer-ece33.firebasestorage.app,
+  messagingSenderId: 328642191235,
 };
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
