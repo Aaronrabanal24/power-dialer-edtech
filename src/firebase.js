@@ -1,21 +1,27 @@
 // src/firebase.js
 import { initializeApp } from "firebase/app";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
-// Replace with your config from Firebase console
+// Vite exposes only VITE_* at build time
 const firebaseConfig = {
-apiKey: "AIzaSyC7j8NDqql1k88x3YSIm4X-L74CsNAU16c",
-authDomain: "power-dialer-ece33.firebaseapp.com",
-projectId: "power-dialer-ece33",
-appId: "1:328642191235:web:d6b558e16630b5924060b6",
+  apiKey: import.meta.env.VITE_FB_API_KEY,
+  authDomain: import.meta.env.VITE_FB_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FB_PROJECT_ID,
+  appId: import.meta.env.VITE_FB_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const app = initializeApp(firebaseConfig);
 
-// Optional: offline cache for Firestore (works great for PWAs)
-enableIndexedDbPersistence(db).catch(() => {
-  // ignore if another tab already enabled persistence
+// Firestore with offline cache (single-tab manager avoids multi-tab conflicts)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentSingleTabManager(),
+  }),
 });
+
+export const auth = getAuth(app);
