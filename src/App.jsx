@@ -88,13 +88,6 @@ function Shell() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Lock scroll + dim background (header + content) when any modal is open
-useEffect(() => {
-  const hasModal = !!showAdd || !!selectedLead;
-  document.body.classList.toggle("modal-open", hasModal);
-  return () => document.body.classList.remove("modal-open");
-}, [showAdd, selectedLead]);
-
   useEffect(() => {
     const m = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => theme === "system" && applyTheme("system");
